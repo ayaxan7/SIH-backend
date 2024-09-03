@@ -1,5 +1,7 @@
 const express = require('express');
 const admin = require('firebase-admin');
+const WebSocket = require('ws');  // Import the ws library
+
 const app = express();
 app.use(express.json());
 
@@ -12,25 +14,62 @@ admin.initializeApp({
 
 const db = admin.database();  // Initialize Firebase Realtime Database
 
+// Create an HTTP server using Express
+const server = require('http').createServer(app);
+
+// Initialize a WebSocket server instance
+const wss = new WebSocket.Server({ server });
+
+// Handle WebSocket connections
+wss.on('connection', (ws) => {
+  console.log('New client connected');
+
+  // Send a welcome message to the client
+  ws.send(JSON.stringify({ message: 'Welcome to the real-time data server!' }));
+
+  // Handle messages from the client
+  ws.on('message', (message) => {
+    console.log('Received message from client:', message);
+  });
+
+  // Handle client disconnects
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
+
 // Endpoint to receive data
-app.get('/', (req, res) => {
-  res.send('side deployed')
-})
+app.get('/', (_req, res) => {
+  res.send('site deployed');
+});
+
 app.post('/api/data', async (req, res) => {
-  const { longitude, latitude, time } = req.body;  // Destructure the data from the request body
+  const { longitude, latitude, time, name, phoneNo } = req.body;  // Destructure the data from the request body
 
   // Validate that all required fields are present
-  if (typeof longitude === 'undefined' || typeof latitude === 'undefined' || typeof time === 'undefined') {
-    return res.status(400).send({ success: false, error: 'Missing required data fields: longitude, latitude, or time' });
+  if (
+    typeof longitude === 'undefined' ||
+    typeof latitude === 'undefined' ||
+    typeof time === 'undefined' ||
+    typeof name === 'undefined' ||
+    typeof phoneNo === 'undefined'
+  ) {
+    return res.status(400).send({ success: false, error: 'Missing required data fields: longitude, latitude, time, name, or phoneNo' });
   }
 
   try {
     // Reference the "data" node in Firebase Realtime Database
     const ref = db.ref('data');
-    console.log('data added')
 
     // Push the data to Firebase
     await ref.push({ longitude, latitude, time });
+
+    // Broadcast the new data to all connected WebSocket clients
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ longitude, latitude, time, name, phoneNo }));
+      }
+    });
 
     res.status(200).send({ success: true });
   } catch (error) {
@@ -53,4 +92,4 @@ app.get('/api/data', async (_req, res) => {
 
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
