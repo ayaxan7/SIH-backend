@@ -13,6 +13,9 @@ admin.initializeApp({
 const db = admin.database();  // Initialize Firebase Realtime Database
 
 // Endpoint to receive data
+app.get('/', (req, res) => {
+  res.send('side deployed')
+})
 app.post('/api/data', async (req, res) => {
   const { longitude, latitude, time } = req.body;  // Destructure the data from the request body
 
