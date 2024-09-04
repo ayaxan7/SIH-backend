@@ -20,6 +20,23 @@ const server = require('http').createServer(app);
 // Initialize a WebSocket server instance
 const wss = new WebSocket.Server({ server });
 
+// Middleware to verify Firebase Auth token
+async function verifyToken(req, res, next) {
+  const token = req.headers['authorization']; // Expect token in the Authorization header
+
+  if (!token) {
+    return res.status(401).send({ success: false, error: 'No token provided' });
+  }
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token.replace('Bearer ', ''));
+    req.user = decodedToken; // Add the decoded token to the request object
+    next(); // Proceed to the next middleware/route handler
+  } catch (error) {
+    return res.status(403).send({ success: false, error: 'Failed to authenticate token' });
+  }
+}
+
 // Handle WebSocket connections
 wss.on('connection', (ws) => {
   console.log('New client connected');
@@ -38,12 +55,8 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Endpoint to receive data
-app.get('/', (_req, res) => {
-  res.send('site deployed');
-});
-
-app.post('/api/data', async (req, res) => {
+// Endpoint to receive data - Protect this route with token authentication
+app.post('/api/data', verifyToken, async (req, res) => {
   const { longitude, latitude, time, name, phoneNo } = req.body;  // Destructure the data from the request body
 
   // Validate that all required fields are present
@@ -77,8 +90,8 @@ app.post('/api/data', async (req, res) => {
   }
 });
 
-// Endpoint to get data
-app.get('/api/data', async (_req, res) => {
+// Endpoint to get data - Protect this route with token authentication
+app.get('/api/data', verifyToken, async (_req, res) => {
   try {
     const ref = db.ref('data');  // Reference the "data" node
     ref.once('value', (snapshot) => {
@@ -88,6 +101,11 @@ app.get('/api/data', async (_req, res) => {
   } catch (error) {
     res.status(500).send({ success: false, error: error.message });
   }
+});
+
+// Endpoint to get site status (no authentication required)
+app.get('/', (_req, res) => {
+  res.send('site deployed');
 });
 
 // Start the server
