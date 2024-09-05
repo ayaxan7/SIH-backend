@@ -125,7 +125,7 @@ app.post('/api/data', verifyToken, apiLimiter, async (req, res) => {
 });
 
 // Route for direct data submission without authentication or rate limiting (admit route)
-app.post('/api/admit', async (req, res) => {
+app.post('/api/admin', async (req, res) => {
   const { longitude, latitude, time, name, phoneNo } = req.body;
 
   // Validate that all required fields are present
