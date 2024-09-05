@@ -20,6 +20,9 @@ const server = require('http').createServer(app);
 // Initialize a WebSocket server instance
 const wss = new WebSocket.Server({ server });
 
+let frontends = [];  // List to maintain connected WebSocket clients
+let currentIndex = 0;  // Index for round-robin distribution
+
 // Middleware to verify Firebase Auth token
 async function verifyToken(req, res, next) {
   const token = req.headers['authorization']; // Expect token in the Authorization header
@@ -40,6 +43,7 @@ async function verifyToken(req, res, next) {
 // Handle WebSocket connections
 wss.on('connection', (ws) => {
   console.log('New client connected');
+  frontends.push(ws);  // Add the new client to the list of frontends
 
   // Send a welcome message to the client
   ws.send(JSON.stringify({ message: 'Welcome to the real-time data server!' }));
@@ -52,8 +56,19 @@ wss.on('connection', (ws) => {
   // Handle client disconnects
   ws.on('close', () => {
     console.log('Client disconnected');
+    frontends = frontends.filter(client => client !== ws);  // Remove the client from the list
   });
 });
+
+// Function to distribute data to WebSocket clients
+function distributeData(data) {
+  if (frontends.length > 0) {
+    const frontend = frontends[currentIndex];
+    frontend.send(JSON.stringify(data));
+
+    currentIndex = (currentIndex + 1) % frontends.length;
+  }
+}
 
 // Endpoint to receive data - Protect this route with token authentication
 app.post('/api/data', verifyToken, async (req, res) => {
@@ -77,12 +92,8 @@ app.post('/api/data', verifyToken, async (req, res) => {
     // Push the data to Firebase
     await ref.push({ longitude, latitude, time });
 
-    // Broadcast the new data to all connected WebSocket clients
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ longitude, latitude, time, name, phoneNo }));
-      }
-    });
+    // Distribute the new data to all connected WebSocket clients
+    distributeData({ longitude, latitude, time, name, phoneNo });
 
     res.status(200).send({ success: true });
   } catch (error) {
