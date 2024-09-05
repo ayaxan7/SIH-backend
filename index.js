@@ -57,15 +57,27 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     console.log('Client disconnected');
     frontends = frontends.filter(client => client !== ws);  // Remove the client from the list
+
+    // Adjust the currentIndex to prevent out-of-bound errors
+    if (currentIndex >= frontends.length) {
+      currentIndex = 0;
+    }
   });
 });
 
-// Function to distribute data to WebSocket clients
+// Function to distribute data to WebSocket clients using round-robin
 function distributeData(data) {
+  // Only proceed if there are connected clients
   if (frontends.length > 0) {
+    // Get the current client using round-robin
     const frontend = frontends[currentIndex];
-    frontend.send(JSON.stringify(data));
 
+    // Check if the current client is still open
+    if (frontend.readyState === WebSocket.OPEN) {
+      frontend.send(JSON.stringify(data));
+    }
+
+    // Move to the next client in round-robin fashion
     currentIndex = (currentIndex + 1) % frontends.length;
   }
 }
