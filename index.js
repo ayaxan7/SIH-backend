@@ -1,6 +1,7 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const WebSocket = require('ws');  // Import the ws library
+const rateLimit = require('express-rate-limit');  // Import rate limit library
 
 const app = express();
 app.use(express.json());
@@ -39,6 +40,16 @@ async function verifyToken(req, res, next) {
     return res.status(403).send({ success: false, error: 'Failed to authenticate token' });
   }
 }
+
+// Apply rate limiting to POST /api/data endpoint (limit to 5 minutes per IP)
+const apiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,  // 5 minutes window
+  max: 100,  // Limit each IP to 100 requests per windowMs
+  message: {
+    success: false,
+    error: 'Too many requests from this IP, please try again after 5 minutes'
+  }
+});
 
 // Handle WebSocket connections
 wss.on('connection', (ws) => {
@@ -82,9 +93,40 @@ function distributeData(data) {
   }
 }
 
-// Endpoint to receive data - Protect this route with token authentication
-app.post('/api/data', verifyToken, async (req, res) => {
+// Route for data submission with rate limiting and authentication
+app.post('/api/data', verifyToken, apiLimiter, async (req, res) => {
   const { longitude, latitude, time, name, phoneNo } = req.body;  // Destructure the data from the request body
+
+  // Validate that all required fields are present
+  if (
+    typeof longitude === 'undefined' ||
+    typeof latitude === 'undefined' ||
+    typeof time === 'undefined' ||
+    typeof name === 'undefined' ||
+    typeof phoneNo === 'undefined'
+  ) {
+    return res.status(400).send({ success: false, error: 'Missing required data fields: longitude, latitude, time, name, or phoneNo' });
+  }
+
+  try {
+    // Reference the "data" node in Firebase Realtime Database
+    const ref = db.ref('data');
+
+    // Push the data to Firebase
+    await ref.push({ longitude, latitude, time });
+
+    // Distribute the new data to all connected WebSocket clients
+    distributeData({ longitude, latitude, time, name, phoneNo });
+
+    res.status(200).send({ success: true });
+  } catch (error) {
+    res.status(500).send({ success: false, error: error.message });
+  }
+});
+
+// Route for direct data submission without authentication or rate limiting (admit route)
+app.post('/api/admit', async (req, res) => {
+  const { longitude, latitude, time, name, phoneNo } = req.body;
 
   // Validate that all required fields are present
   if (
